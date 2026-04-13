@@ -71,11 +71,8 @@ def format_global_debt_summary(
     return "\n\n".join(sections)
 
 
-def format_history(rows: list[dict], user_lookup: dict[int, dict]) -> str:
-    if not rows:
-        return "История пуста."
-
-    # Group by normalised pair (smaller_id, larger_id)
+def _format_history_rows(rows: list[dict], user_lookup: dict[int, dict]) -> str:
+    """Render a list of transaction rows grouped by participant pair."""
     by_pair: dict[tuple[int, int], list[dict]] = defaultdict(list)
     for row in rows:
         key = (
@@ -88,8 +85,7 @@ def format_history(rows: list[dict], user_lookup: dict[int, dict]) -> str:
     for (id_a, id_b), txs in by_pair.items():
         user_a = user_lookup.get(id_a, {"user_id": id_a, "full_name": str(id_a)})
         user_b = user_lookup.get(id_b, {"user_id": id_b, "full_name": str(id_b)})
-        header = f"{display_name(user_a)} ↔ {display_name(user_b)}"
-        lines = [header]
+        lines = [f"{display_name(user_a)} ↔ {display_name(user_b)}"]
         for tx in txs:
             debtor = user_lookup.get(int(tx["debtor_id"]), {"user_id": tx["debtor_id"], "full_name": str(tx["debtor_id"])})
             creditor = user_lookup.get(int(tx["creditor_id"]), {"user_id": tx["creditor_id"], "full_name": str(tx["creditor_id"])})
@@ -100,6 +96,31 @@ def format_history(rows: list[dict], user_lookup: dict[int, dict]) -> str:
                 f"{display_name(debtor)} → {display_name(creditor)}  {date_str}"
             )
         sections.append("\n".join(lines))
+
+    return "\n\n".join(sections)
+
+
+def format_history(rows: list[dict], user_lookup: dict[int, dict]) -> str:
+    """For group chat: transactions grouped by pair."""
+    if not rows:
+        return "История пуста."
+    return _format_history_rows(rows, user_lookup)
+
+
+def format_global_history(rows: list[dict], user_lookup: dict[int, dict]) -> str:
+    """For private chat: transactions grouped by chat, then by pair."""
+    if not rows:
+        return "История пуста."
+
+    by_chat: dict[tuple, list] = defaultdict(list)
+    for row in rows:
+        key = (row["chat_id"], row.get("chat_title") or f"Чат {row['chat_id']}")
+        by_chat[key].append(row)
+
+    sections: list[str] = []
+    for (_, chat_title), chat_rows in by_chat.items():
+        inner = _format_history_rows(chat_rows, user_lookup)
+        sections.append(f"📍 <b>{chat_title}</b>\n{inner}")
 
     return "\n\n".join(sections)
 

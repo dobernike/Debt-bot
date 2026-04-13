@@ -191,6 +191,24 @@ class Database:
             )
             return [dict(r) for r in rows]
 
+    async def get_transaction_history_for_user(self, user_id: int, limit: int = 10) -> list[dict]:
+        """Return the last `limit` debt entries across all chats for a user, newest first."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT d.debtor_id, d.creditor_id, d.amount, d.currency, d.created_at,
+                       d.chat_id, c.chat_title
+                FROM debts d
+                JOIN chats c ON d.chat_id = c.chat_id
+                WHERE d.debtor_id = $1 OR d.creditor_id = $1
+                ORDER BY d.created_at DESC
+                LIMIT $2
+                """,
+                user_id,
+                limit,
+            )
+            return [dict(r) for r in rows]
+
     async def get_users_by_ids(self, user_ids: list[int]) -> list[dict]:
         """Fetch user records for a list of user_ids."""
         if not user_ids:
