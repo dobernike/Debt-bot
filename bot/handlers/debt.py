@@ -113,7 +113,10 @@ async def _save_and_reply(
     creditor = user_lookup.get(state.creditor_id, {"user_id": state.creditor_id, "full_name": str(state.creditor_id)})
     abs_amount = abs(state.amount)
 
-    action = f"✅ {abs_amount:g} {state.currency}  {display_name(debtor)} → {display_name(creditor)}"
+    if state.amount < 0:
+        action = f"✅ {abs_amount:g} {state.currency}  {display_name(creditor)} ← {display_name(debtor)}"
+    else:
+        action = f"✅ {abs_amount:g} {state.currency}  {display_name(debtor)} → {display_name(creditor)}"
 
     summary = format_debt_summary(active_debts, user_lookup)
     text = f"{action}\n\n{summary}"
