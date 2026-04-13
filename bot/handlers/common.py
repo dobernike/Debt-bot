@@ -30,7 +30,7 @@ def _try_parse_number(token: str) -> float | None:
             result = eval(normalized, {"__builtins__": {}})  # noqa: S307
             return float(result)
         except Exception:
-            raise ValueError(f"Не удалось вычислить выражение: {token!r}")
+            return None
     return None
 
 
@@ -74,7 +74,18 @@ def parse_amount_currency_username(
     currency_str: str | None = None
     username: str | None = None
 
-    for token in args:
+    # Merge bare sign tokens ("- 300" → "-300", "+ 300" → "+300")
+    merged: list[str] = []
+    i = 0
+    while i < len(args):
+        if args[i] in ("-", "+") and i + 1 < len(args) and not args[i + 1].startswith("@"):
+            merged.append(args[i] + args[i + 1])
+            i += 2
+        else:
+            merged.append(args[i])
+            i += 1
+
+    for token in merged:
         if token.startswith("@"):
             username = token.lstrip("@")
         else:
