@@ -16,7 +16,6 @@ from bot.database import Database
 from bot.handlers.debt import build_debt_conversation
 from bot.handlers.debts import debts_handler
 from bot.handlers.help import help_handler
-from bot.handlers.settle import build_settle_conversation
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -81,10 +80,9 @@ async def post_init(application: Application) -> None:
     logger.info("Database initialised.")
 
     commands = [
-        BotCommand("debt",   "Записать долг: /debt 150 [валюта] [@user]"),
-        BotCommand("debts",  "Показать текущие долги"),
-        BotCommand("settle", "Погасить долг: /settle [@user] [сумма]"),
-        BotCommand("help",   "Справка по командам"),
+        BotCommand("debt",  "Записать долг или платёж: /debt 150 [валюта] [@user]"),
+        BotCommand("debts", "Показать текущие долги"),
+        BotCommand("help",  "Справка по командам"),
     ]
     try:
         await application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
@@ -112,7 +110,6 @@ def main() -> None:
 
     # ConversationHandlers must be registered before plain CommandHandlers
     app.add_handler(build_debt_conversation())
-    app.add_handler(build_settle_conversation())
 
     # Simple one-shot commands
     app.add_handler(CommandHandler("debts", debts_handler))

@@ -1,4 +1,4 @@
-from bot.formatting import display_name, format_debt_summary, format_settled_summary
+from bot.formatting import display_name, format_debt_summary
 
 
 def _user(user_id: int, username: str | None = None, full_name: str = "User") -> dict:
@@ -51,13 +51,3 @@ def test_format_multiple_pairs():
     assert "@carol → @alice: 20 EUR" in result
 
 
-def test_format_settled_summary():
-    result = format_settled_summary({"USD": 150.0})
-    assert "150 USD" in result
-    assert "Settled" in result
-
-
-def test_format_settled_multiple_currencies():
-    result = format_settled_summary({"USD": 50.0, "VND": 100000.0})
-    assert "USD" in result
-    assert "VND" in result

@@ -70,11 +70,6 @@ def format_global_debt_summary(
     return "\n\n".join(sections)
 
 
-def format_settled_summary(settled: dict[str, float]) -> str:
-    parts = " + ".join(f"{v:g} {k}" for k, v in sorted(settled.items()))
-    return f"✅ Погашено: {parts}"
-
-
 def format_help() -> str:
     return (
         "<b>Debt Bot</b> — учёт долгов в групповых чатах\n\n"
@@ -83,12 +78,13 @@ def format_help() -> str:
         "<code>/debt 100 VND</code> — ты должен 100 вьетнамских донгов\n"
         "<code>/debt 50 @username</code> — ты должен @username 50 USD\n"
         "<code>/debt 50 EUR @username</code> — ты должен @username 50 EUR\n"
-        "<code>/debt @username 100+200</code> — сумма как выражение (= 300)\n"
-        "<code>/debt -150</code> — ты заплатил 150 (отрицательный долг)\n\n"
-        "<b>Погасить долг:</b>\n"
-        "<code>/settle</code> — погасить весь долг (чат с двумя участниками)\n"
-        "<code>/settle @username</code> — погасить всё что должен @username\n"
-        "<code>/settle 50 USD @username</code> — частичное погашение\n\n"
+        "<code>/debt @username 100+200</code> — сумма как выражение (= 300)\n\n"
+        "<b>Погасить долг (отрицательная сумма):</b>\n"
+        "<code>/debt -150</code> — ты заплатил 150 другому участнику\n"
+        "<code>/debt -50 @username</code> — ты заплатил 50 конкретному пользователю\n"
+        "<code>/debt -50 EUR @username</code> — частичное погашение в EUR\n\n"
+        "<i>Отрицательный долг автоматически зачитывается: если ты должен 100 и платишь 150 — "
+        "теперь тебе должны 50.</i>\n\n"
         "<b>Посмотреть долги:</b>\n"
         "<code>/debts</code> — текущий список долгов\n\n"
         "<i>Валюта по умолчанию — USD.</i>"
