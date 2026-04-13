@@ -1,6 +1,6 @@
 import logging
 
-from telegram import BotCommand, Update
+from telegram import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeDefault, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -80,12 +80,18 @@ async def post_init(application: Application) -> None:
     application.bot_data["db"] = db
     logger.info("Database initialised.")
 
-    await application.bot.set_my_commands([
+    commands = [
         BotCommand("debt",   "Записать долг: /debt 150 [валюта] [@user]"),
         BotCommand("debts",  "Показать текущие долги"),
         BotCommand("settle", "Погасить долг: /settle [@user] [сумма]"),
         BotCommand("help",   "Справка по командам"),
-    ])
+    ]
+    try:
+        await application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+        await application.bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
+        logger.info("Bot commands registered.")
+    except Exception:
+        logger.exception("Failed to register bot commands.")
 
 
 async def post_shutdown(application: Application) -> None:
