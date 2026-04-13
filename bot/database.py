@@ -11,7 +11,9 @@ class Database:
         self._pool: asyncpg.Pool | None = None
 
     async def init(self) -> None:
-        self._pool = await asyncpg.create_pool(self._dsn)
+        # ssl="require" is needed for hosted providers like Neon or Supabase;
+        # asyncpg ignores it for local connections.
+        self._pool = await asyncpg.create_pool(self._dsn, ssl="require")
         await self._create_tables()
 
     async def close(self) -> None:
