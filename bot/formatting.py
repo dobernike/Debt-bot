@@ -39,6 +39,37 @@ def format_debt_summary(
     return "\n".join(lines)
 
 
+def format_global_debt_summary(
+    debts: list[dict],
+    user_lookup: dict[int, dict],
+) -> str:
+    """
+    For private chat: show all user's debts grouped by chat.
+
+    Output example:
+        📍 Путешествие в Азию
+        @you → @alice: 150 USD
+
+        📍 Общие расходы
+        @bob → @you: 50 EUR
+    """
+    if not debts:
+        return "Долгов нет."
+
+    # Group rows by (chat_id, chat_title)
+    by_chat: dict[tuple, list] = defaultdict(list)
+    for row in debts:
+        key = (row["chat_id"], row.get("chat_title") or f"Чат {row['chat_id']}")
+        by_chat[key].append(row)
+
+    sections: list[str] = []
+    for (_, chat_title), chat_debts in by_chat.items():
+        summary = format_debt_summary(chat_debts, user_lookup)
+        sections.append(f"📍 <b>{chat_title}</b>\n{summary}")
+
+    return "\n\n".join(sections)
+
+
 def format_settled_summary(settled: dict[str, float]) -> str:
     parts = " + ".join(f"{v:g} {k}" for k, v in sorted(settled.items()))
     return f"✅ Погашено: {parts}"

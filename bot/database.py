@@ -149,6 +149,43 @@ class Database:
             )
             return [dict(r) for r in rows]
 
+    async def get_all_debts_for_user(self, user_id: int) -> list[dict]:
+        """
+        Return all active debts where the user is debtor or creditor,
+        across all chats. Each row includes chat_id and chat_title.
+        """
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT d.chat_id,
+                       c.chat_title,
+                       d.debtor_id,
+                       d.creditor_id,
+                       d.currency,
+                       SUM(d.amount) AS total
+                FROM debts d
+                JOIN chats c ON d.chat_id = c.chat_id
+                WHERE d.settled_at IS NULL
+                  AND (d.debtor_id = $1 OR d.creditor_id = $1)
+                GROUP BY d.chat_id, c.chat_title, d.debtor_id, d.creditor_id, d.currency
+                HAVING SUM(d.amount) > 0
+                ORDER BY c.chat_title, d.debtor_id, d.creditor_id, d.currency
+                """,
+                user_id,
+            )
+            return [dict(r) for r in rows]
+
+    async def get_users_by_ids(self, user_ids: list[int]) -> list[dict]:
+        """Fetch user records for a list of user_ids."""
+        if not user_ids:
+            return []
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT user_id, username, full_name FROM users WHERE user_id = ANY($1)",
+                user_ids,
+            )
+            return [dict(r) for r in rows]
+
     async def get_debt_total(
         self,
         chat_id: int,
