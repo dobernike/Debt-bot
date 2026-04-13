@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import timezone
 
 
 def display_name(user: dict) -> str:
@@ -66,6 +67,39 @@ def format_global_debt_summary(
     for (_, chat_title), chat_debts in by_chat.items():
         summary = format_debt_summary(chat_debts, user_lookup)
         sections.append(f"📍 <b>{chat_title}</b>\n{summary}")
+
+    return "\n\n".join(sections)
+
+
+def format_history(rows: list[dict], user_lookup: dict[int, dict]) -> str:
+    if not rows:
+        return "История пуста."
+
+    # Group by normalised pair (smaller_id, larger_id)
+    by_pair: dict[tuple[int, int], list[dict]] = defaultdict(list)
+    for row in rows:
+        key = (
+            min(int(row["debtor_id"]), int(row["creditor_id"])),
+            max(int(row["debtor_id"]), int(row["creditor_id"])),
+        )
+        by_pair[key].append(row)
+
+    sections: list[str] = []
+    for (id_a, id_b), txs in by_pair.items():
+        user_a = user_lookup.get(id_a, {"user_id": id_a, "full_name": str(id_a)})
+        user_b = user_lookup.get(id_b, {"user_id": id_b, "full_name": str(id_b)})
+        header = f"{display_name(user_a)} ↔ {display_name(user_b)}"
+        lines = [header]
+        for tx in txs:
+            debtor = user_lookup.get(int(tx["debtor_id"]), {"user_id": tx["debtor_id"], "full_name": str(tx["debtor_id"])})
+            creditor = user_lookup.get(int(tx["creditor_id"]), {"user_id": tx["creditor_id"], "full_name": str(tx["creditor_id"])})
+            dt = tx["created_at"].replace(tzinfo=timezone.utc) if tx["created_at"].tzinfo is None else tx["created_at"]
+            date_str = dt.strftime("%-d %b, %H:%M")
+            lines.append(
+                f"  💸 {float(tx['amount']):g} {tx['currency']}  "
+                f"{display_name(debtor)} → {display_name(creditor)}  {date_str}"
+            )
+        sections.append("\n".join(lines))
 
     return "\n\n".join(sections)
 

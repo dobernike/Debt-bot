@@ -175,6 +175,22 @@ class Database:
             )
             return [dict(r) for r in rows]
 
+    async def get_transaction_history(self, chat_id: int, limit: int = 10) -> list[dict]:
+        """Return the last `limit` debt entries for a chat, newest first."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT debtor_id, creditor_id, amount, currency, created_at
+                FROM debts
+                WHERE chat_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                chat_id,
+                limit,
+            )
+            return [dict(r) for r in rows]
+
     async def get_users_by_ids(self, user_ids: list[int]) -> list[dict]:
         """Fetch user records for a list of user_ids."""
         if not user_ids:
