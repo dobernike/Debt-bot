@@ -149,6 +149,32 @@ class Database:
             )
             return [dict(r) for r in rows]
 
+    async def get_debt_total(
+        self,
+        chat_id: int,
+        debtor_id: int,
+        creditor_id: int,
+        currency: str,
+    ) -> float:
+        """Return the total active debt for a specific (debtor, creditor, currency) triple."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT COALESCE(SUM(amount), 0) AS total
+                FROM debts
+                WHERE chat_id = $1
+                  AND debtor_id = $2
+                  AND creditor_id = $3
+                  AND currency = $4
+                  AND settled_at IS NULL
+                """,
+                chat_id,
+                debtor_id,
+                creditor_id,
+                currency,
+            )
+            return float(row["total"])
+
     async def get_user_by_username(
         self, username: str, chat_id: int
     ) -> dict | None:

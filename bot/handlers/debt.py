@@ -19,28 +19,98 @@ AWAIT_CURRENCY_CONFIRM = 0
 AWAIT_RECIPIENT_SELECT = 1
 
 
+async def _apply_debt_with_netting(
+    db: Database,
+    chat_id: int,
+    debtor_id: int,
+    creditor_id: int,
+    amount: float,   # positive = new debt, negative = payment
+    currency: str,
+) -> None:
+    """
+    Apply a debt entry with automatic netting.
+
+    Positive amount: debtor owes creditor more.
+      - First cancels any reverse debt (creditor → debtor).
+      - Adds remainder as a new forward debt if any.
+
+    Negative amount: debtor is paying creditor.
+      - Reduces forward debt (debtor → creditor).
+      - If overpayment, creates reverse debt (creditor → debtor) for the excess.
+    """
+    if amount > 0:
+        reverse = await db.get_debt_total(chat_id, creditor_id, debtor_id, currency)
+        if reverse > 0:
+            if amount <= reverse:
+                await db.settle_debt(chat_id, creditor_id, debtor_id, currency, amount)
+                return
+            # Wipe reverse debt and add net forward debt
+            await db.settle_debt(chat_id, creditor_id, debtor_id, currency, None)
+            amount = round(amount - reverse, 2)
+        await db.add_debt(
+            DebtRecord(
+                debtor_id=debtor_id,
+                creditor_id=creditor_id,
+                amount=amount,
+                currency=currency,
+                chat_id=chat_id,
+            )
+        )
+    else:
+        # Negative = payment from debtor to creditor
+        payment = round(abs(amount), 2)
+        forward = await db.get_debt_total(chat_id, debtor_id, creditor_id, currency)
+        if forward > 0:
+            if payment <= forward:
+                await db.settle_debt(chat_id, debtor_id, creditor_id, currency, payment)
+                return
+            # Overpayment: wipe forward debt, create reverse for the excess
+            await db.settle_debt(chat_id, debtor_id, creditor_id, currency, None)
+            excess = round(payment - forward, 2)
+            await db.add_debt(
+                DebtRecord(
+                    debtor_id=creditor_id,
+                    creditor_id=debtor_id,
+                    amount=excess,
+                    currency=currency,
+                    chat_id=chat_id,
+                )
+            )
+        else:
+            # No existing debt — creditor now owes debtor
+            await db.add_debt(
+                DebtRecord(
+                    debtor_id=creditor_id,
+                    creditor_id=debtor_id,
+                    amount=payment,
+                    currency=currency,
+                    chat_id=chat_id,
+                )
+            )
+
+
 async def _save_and_reply(
     db: Database,
     state: PendingDebtState,
     from_user_id: int,
     context: ContextTypes.DEFAULT_TYPE,
-    reply_target,   # Update or CallbackQuery — used to send the response
+    reply_target,
     edit: bool = False,
 ) -> None:
-    await db.add_debt(
-        DebtRecord(
-            debtor_id=from_user_id,
-            creditor_id=state.creditor_id,
-            amount=state.amount,
-            currency=state.currency,
-            chat_id=state.chat_id,
-        )
+    await _apply_debt_with_netting(
+        db,
+        chat_id=state.chat_id,
+        debtor_id=from_user_id,
+        creditor_id=state.creditor_id,
+        amount=state.amount,
+        currency=state.currency,
     )
     active_debts = await db.get_active_debts(state.chat_id)
     members = await db.get_chat_members(state.chat_id)
     user_lookup = {m["user_id"]: m for m in members}
     summary = format_debt_summary(active_debts, user_lookup)
-    text = f"Долг записан.\n\n{summary}"
+    label = "Выплата учтена." if state.amount < 0 else "Долг записан."
+    text = f"{label}\n\n{summary}"
 
     if edit:
         await reply_target.edit_message_text(text)
@@ -69,13 +139,15 @@ async def debt_command(
     if amount is None:
         await update.message.reply_text(
             "Использование: /debt <сумма> [валюта] [@username]\n"
-            "Примеры: /debt 150\n"
-            "         /debt 100 VND @alice"
+            "Примеры:\n"
+            "  /debt 150       — ты должен 150 USD\n"
+            "  /debt -150      — ты отдал 150 USD (уменьшает долг)\n"
+            "  /debt 100 VND @alice"
         )
         return ConversationHandler.END
 
-    if amount <= 0:
-        await update.message.reply_text("Сумма должна быть положительной.")
+    if amount == 0:
+        await update.message.reply_text("Сумма не может быть равна нулю.")
         return ConversationHandler.END
 
     # --- Resolve creditor ---
