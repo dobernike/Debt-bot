@@ -1,10 +1,59 @@
 """Shared utilities used by both debt and settle handlers."""
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+import logging
+
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import TelegramError
 
 from bot.database import Database
 from bot.formatting import display_name
+
+logger = logging.getLogger(__name__)
+
+
+async def resolve_user_by_username(
+    bot: Bot,
+    db: Database,
+    username: str,
+    chat_id: int,
+) -> dict | None:
+    """
+    Look up a user by @username.
+
+    1. Check the local DB first (populated by track_user handler).
+    2. Fall back to Telegram API: get_chat("@username") to resolve the
+       user_id, then verify they are actually a member of the chat.
+
+    Returns a dict with user_id / username / full_name, or None if not found.
+    """
+    clean = username.lstrip("@")
+
+    # Fast path: already in DB
+    member = await db.get_user_by_username(clean, chat_id)
+    if member:
+        return member
+
+    # Slow path: ask Telegram API
+    try:
+        chat = await bot.get_chat(f"@{clean}")
+        user_id = chat.id
+        full_name = chat.full_name or clean
+        uname = chat.username
+    except TelegramError:
+        return None
+
+    # Confirm the user is actually in this chat
+    try:
+        await bot.get_chat_member(chat_id, user_id)
+    except TelegramError:
+        return None
+
+    # Persist so next lookup is instant
+    await db.upsert_user(user_id, uname, full_name)
+    await db.upsert_chat_member(chat_id, user_id)
+
+    return {"user_id": user_id, "username": uname, "full_name": full_name}
 
 
 async def build_member_keyboard(
@@ -63,7 +112,7 @@ def parse_amount_currency_username(
                     currency_str = token
                 elif currency_str is None and amount is None:
                     raise ValueError(
-                        "First argument must be a number, e.g. /debt 150"
+                        "Первый аргумент должен быть числом, например /debt 150"
                     )
 
     return amount, currency_str, username

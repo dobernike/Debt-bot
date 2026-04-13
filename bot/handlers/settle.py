@@ -11,7 +11,11 @@ from telegram.ext import (
 from bot.currency import is_valid_currency, normalize_currency, suggest_currency
 from bot.database import Database
 from bot.formatting import format_debt_summary, format_settled_summary
-from bot.handlers.common import build_member_keyboard, parse_amount_currency_username
+from bot.handlers.common import (
+    build_member_keyboard,
+    parse_amount_currency_username,
+    resolve_user_by_username,
+)
 from bot.models import PendingSettleState
 
 # ConversationHandler states
@@ -85,10 +89,13 @@ async def settle_command(
     creditor_id: int | None = None
 
     if username:
-        member = await db.get_user_by_username(username, chat_id)
+        member = await resolve_user_by_username(context.bot, db, username, chat_id)
         if not member:
             await update.message.reply_text(
-                f"Пользователь @{username} не найден в этом чате."
+                f"Пользователь @{username} не найден в этом чате.\n\n"
+                "Убедись, что он участник группы. Если бот всё равно не находит — "
+                "сделай бота администратором или выключи режим приватности "
+                "через @BotFather → Bot Settings → Group Privacy → Turn off."
             )
             return ConversationHandler.END
         creditor_id = member["user_id"]
