@@ -4,6 +4,7 @@ from telegram import BotCommand, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    ChatMemberHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -34,6 +35,28 @@ async def track_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await db.upsert_user(user.id, user.username, user.full_name)
     await db.upsert_chat(chat.id, getattr(chat, "title", None) or chat.full_name)
     await db.upsert_chat_member(chat.id, user.id)
+
+
+async def import_chat_admins(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    When the bot is added to a group, immediately import all current admins.
+    This seeds the members table so @mentions work without waiting for messages.
+    """
+    chat = update.effective_chat
+    if not chat or chat.type not in ("group", "supergroup"):
+        return
+    db: Database = context.bot_data["db"]
+    try:
+        await db.upsert_chat(chat.id, chat.title)
+        admins = await context.bot.get_chat_administrators(chat.id)
+        for admin in admins:
+            u = admin.user
+            if not u.is_bot:
+                await db.upsert_user(u.id, u.username, u.full_name)
+                await db.upsert_chat_member(chat.id, u.id)
+        logger.info("Imported %d admins for chat %d", len(admins), chat.id)
+    except Exception:
+        logger.exception("Failed to import admins for chat %d", chat.id)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -94,6 +117,9 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(expired_callback))
 
     app.add_error_handler(error_handler)
+
+    # Import admins when bot is added to a group
+    app.add_handler(ChatMemberHandler(import_chat_admins, ChatMemberHandler.MY_CHAT_MEMBER))
 
     # Track every user who sends a message (handler group 1 always fires)
     app.add_handler(MessageHandler(filters.ALL, track_user), group=1)
