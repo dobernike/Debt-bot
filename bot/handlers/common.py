@@ -1,10 +1,37 @@
 """Shared utilities used by both debt and settle handlers."""
 from __future__ import annotations
 
+import re
+
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.database import Database
 from bot.formatting import display_name
+
+# Only allow digits, spaces, and basic arithmetic operators (+, -, *, /, ., parentheses)
+_SAFE_EXPR_RE = re.compile(r'^[\d\s\+\-\*\/\.\(\)]+$')
+
+
+def _try_parse_number(token: str) -> float | None:
+    """
+    Try to parse a token as a number or a safe arithmetic expression.
+    Returns the float value, or None if the token is not numeric/math.
+    Raises ValueError if the expression looks numeric but is invalid.
+    """
+    normalized = token.replace(",", ".")
+    # Plain float first
+    try:
+        return float(normalized)
+    except ValueError:
+        pass
+    # Math expression: only allow safe characters
+    if _SAFE_EXPR_RE.match(normalized):
+        try:
+            result = eval(normalized, {"__builtins__": {}})  # noqa: S307
+            return float(result)
+        except Exception:
+            raise ValueError(f"Не удалось вычислить выражение: {token!r}")
+    return None
 
 
 async def build_member_keyboard(
@@ -51,13 +78,14 @@ def parse_amount_currency_username(
         if token.startswith("@"):
             username = token.lstrip("@")
         else:
-            try:
-                value = float(token.replace(",", "."))
+            value = _try_parse_number(token)
+            if value is not None:
                 if amount is None:
                     amount = value
                 else:
-                    raise ValueError(f"Unexpected extra number: {token!r}")
-            except ValueError:
+                    raise ValueError(f"Неожиданное число: {token!r}")
+            else:
+                # Not a number — treat as currency or error
                 if currency_str is None and amount is not None:
                     currency_str = token
                 elif currency_str is None and amount is None:
