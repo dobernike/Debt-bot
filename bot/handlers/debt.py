@@ -40,7 +40,7 @@ async def _save_and_reply(
     members = await db.get_chat_members(state.chat_id)
     user_lookup = {m["user_id"]: m for m in members}
     summary = format_debt_summary(active_debts, user_lookup)
-    text = f"Debt recorded.\n\n{summary}"
+    text = f"Долг записан.\n\n{summary}"
 
     if edit:
         await reply_target.edit_message_text(text)
@@ -68,14 +68,14 @@ async def debt_command(
 
     if amount is None:
         await update.message.reply_text(
-            "Usage: /debt <amount> [currency] [@username]\n"
-            "Example: /debt 150\n"
+            "Использование: /debt <сумма> [валюта] [@username]\n"
+            "Примеры: /debt 150\n"
             "         /debt 100 VND @alice"
         )
         return ConversationHandler.END
 
     if amount <= 0:
-        await update.message.reply_text("Amount must be positive.")
+        await update.message.reply_text("Сумма должна быть положительной.")
         return ConversationHandler.END
 
     # --- Resolve creditor ---
@@ -85,13 +85,13 @@ async def debt_command(
         member = await db.get_user_by_username(username, chat_id)
         if not member:
             await update.message.reply_text(
-                f"User @{username} not found in this chat. "
-                "They need to send at least one message so I can see them."
+                f"Пользователь @{username} не найден в этом чате. "
+                "Он должен написать хотя бы одно сообщение, чтобы бот его увидел."
             )
             return ConversationHandler.END
         creditor_id = member["user_id"]
         if creditor_id == user.id:
-            await update.message.reply_text("You can't owe yourself.")
+            await update.message.reply_text("Нельзя быть должным самому себе.")
             return ConversationHandler.END
     else:
         members = await db.get_chat_members(chat_id)
@@ -100,8 +100,8 @@ async def debt_command(
             creditor_id = others[0]["user_id"]
         elif len(others) == 0:
             await update.message.reply_text(
-                "No other members found yet. "
-                "Others need to send a message first so I can see them."
+                "Других участников пока не найдено. "
+                "Они должны написать хотя бы одно сообщение."
             )
             return ConversationHandler.END
         # else creditor_id stays None → will show selection keyboard
@@ -118,8 +118,8 @@ async def debt_command(
         suggested = suggest_currency(currency_str)
         if not suggested:
             await update.message.reply_text(
-                f'Unknown currency "{currency_str}". '
-                "Use a valid ISO 4217 code (e.g. USD, EUR, VND, JPY)."
+                f'Неизвестная валюта "{currency_str}". '
+                "Используй код ISO 4217 (например USD, EUR, VND, JPY)."
             )
             return ConversationHandler.END
         # Will ask for confirmation below
@@ -142,8 +142,8 @@ async def debt_command(
             InlineKeyboardButton("No ✗", callback_data="currency_no"),
         ]])
         await update.message.reply_text(
-            f'Did you mean *{suggested}*?',
-            parse_mode="Markdown",
+            f'Вы имели в виду <b>{suggested}</b>?',
+            parse_mode="HTML",
             reply_markup=keyboard,
         )
         return AWAIT_CURRENCY_CONFIRM
@@ -153,11 +153,11 @@ async def debt_command(
         keyboard = await build_member_keyboard(db, chat_id, user.id, prefix="recipient")
         if not keyboard:
             await update.message.reply_text(
-                "No other members found yet. "
-                "Others need to send a message first so I can see them."
+                "Других участников пока не найдено. "
+                "Они должны написать хотя бы одно сообщение."
             )
             return ConversationHandler.END
-        await update.message.reply_text("Who do you owe?", reply_markup=keyboard)
+        await update.message.reply_text("Кому ты должен?", reply_markup=keyboard)
         return AWAIT_RECIPIENT_SELECT
 
     # --- All resolved: save immediately ---
@@ -176,13 +176,13 @@ async def handle_currency_confirm(
 
     if not state:
         await query.edit_message_text(
-            "This selection has expired. Please re-enter /debt."
+            "Время вышло. Введи /debt заново."
         )
         return ConversationHandler.END
 
     if query.data == "currency_no":
         await query.edit_message_text(
-            "Cancelled. Please re-enter /debt with the correct currency code."
+            "Отменено. Введи /debt с правильным кодом валюты."
         )
         context.user_data.pop("pending_debt", None)
         return ConversationHandler.END
@@ -198,12 +198,11 @@ async def handle_currency_confirm(
         )
         if not keyboard:
             await query.edit_message_text(
-                "No other members found yet. "
-                "Others need to send a message first so I can see them."
+                "Других участников пока не найдено."
             )
             context.user_data.pop("pending_debt", None)
             return ConversationHandler.END
-        await query.edit_message_text("Who do you owe?", reply_markup=keyboard)
+        await query.edit_message_text("Кому ты должен?", reply_markup=keyboard)
         return AWAIT_RECIPIENT_SELECT
 
     await _save_and_reply(db, state, query.from_user.id, context, query, edit=True)
@@ -221,13 +220,13 @@ async def handle_recipient_select(
 
     if not state:
         await query.edit_message_text(
-            "This selection has expired. Please re-enter /debt."
+            "Время вышло. Введи /debt заново."
         )
         return ConversationHandler.END
 
     creditor_id = int(query.data.split(":", 1)[1])
     if creditor_id == query.from_user.id:
-        await query.edit_message_text("You can't owe yourself. Please re-enter /debt.")
+        await query.edit_message_text("Нельзя быть должным самому себе. Введи /debt заново.")
         context.user_data.pop("pending_debt", None)
         return ConversationHandler.END
 

@@ -47,7 +47,7 @@ async def expired_callback(
     """Catch button presses for conversations that have already ended/timed out."""
     query = update.callback_query
     await query.answer(
-        "This selection has expired. Please re-enter the command.", show_alert=True
+        "Время вышло. Введи команду заново.", show_alert=True
     )
 
 

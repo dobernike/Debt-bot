@@ -12,16 +12,8 @@ def format_debt_summary(
     debts: list[dict],
     user_lookup: dict[int, dict],
 ) -> str:
-    """
-    Render all active debts as a human-readable string.
-
-    Groups multiple currencies for the same pair on one line:
-        @alice → @bob: 150 USD + 100 VND
-
-    Returns "No active debts." when the list is empty.
-    """
     if not debts:
-        return "No active debts."
+        return "Долгов нет."
 
     # Group by (debtor_id, creditor_id) → {currency: total}
     grouped: dict[tuple[int, int], dict[str, float]] = defaultdict(dict)
@@ -48,24 +40,23 @@ def format_debt_summary(
 
 
 def format_settled_summary(settled: dict[str, float]) -> str:
-    """Format the result of a settle operation: 'Settled: 150 USD + 100 VND'"""
     parts = " + ".join(f"{v:g} {k}" for k, v in sorted(settled.items()))
-    return f"✅ Settled: {parts}"
+    return f"✅ Погашено: {parts}"
 
 
 def format_help() -> str:
     return (
-        "<b>Debt Bot</b> — track who owes whom\n\n"
-        "<b>Record a debt:</b>\n"
-        "<code>/debt 150</code> — you owe the other person 150 USD\n"
-        "<code>/debt 100 VND</code> — you owe 100 Vietnamese Dong\n"
-        "<code>/debt 50 @username</code> — you owe @username 50 USD\n"
-        "<code>/debt 50 EUR @username</code> — you owe @username 50 EUR\n\n"
-        "<b>Settle a debt:</b>\n"
-        "<code>/settle</code> — settle all you owe (2-person chat)\n"
-        "<code>/settle @username</code> — settle all you owe to @username\n"
-        "<code>/settle 50 USD @username</code> — partial settlement\n\n"
-        "<b>View debts:</b>\n"
-        "<code>/debts</code> — show current debt summary\n\n"
-        "<i>Default currency is USD.</i>"
+        "<b>Debt Bot</b> — учёт долгов в групповых чатах\n\n"
+        "<b>Записать долг:</b>\n"
+        "<code>/debt 150</code> — ты должен другому участнику 150 USD\n"
+        "<code>/debt 100 VND</code> — ты должен 100 вьетнамских донгов\n"
+        "<code>/debt 50 @username</code> — ты должен @username 50 USD\n"
+        "<code>/debt 50 EUR @username</code> — ты должен @username 50 EUR\n\n"
+        "<b>Погасить долг:</b>\n"
+        "<code>/settle</code> — погасить весь долг (чат с двумя участниками)\n"
+        "<code>/settle @username</code> — погасить всё что должен @username\n"
+        "<code>/settle 50 USD @username</code> — частичное погашение\n\n"
+        "<b>Посмотреть долги:</b>\n"
+        "<code>/debts</code> — текущий список долгов\n\n"
+        "<i>Валюта по умолчанию — USD.</i>"
     )

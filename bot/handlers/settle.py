@@ -88,7 +88,7 @@ async def settle_command(
         member = await db.get_user_by_username(username, chat_id)
         if not member:
             await update.message.reply_text(
-                f"User @{username} not found in this chat."
+                f"Пользователь @{username} не найден в этом чате."
             )
             return ConversationHandler.END
         creditor_id = member["user_id"]
@@ -98,7 +98,7 @@ async def settle_command(
         if len(others) == 1:
             creditor_id = others[0]["user_id"]
         elif len(others) == 0:
-            await update.message.reply_text("No other members found in this chat.")
+            await update.message.reply_text("Других участников пока не найдено.")
             return ConversationHandler.END
         # else: will ask
 
@@ -113,8 +113,8 @@ async def settle_command(
             suggested = suggest_currency(currency_str)
             if not suggested:
                 await update.message.reply_text(
-                    f'Unknown currency "{currency_str}". '
-                    "Use a valid ISO 4217 code (e.g. USD, EUR, VND)."
+                    f'Неизвестная валюта "{currency_str}". '
+                    "Используй код ISO 4217 (например USD, EUR, VND)."
                 )
                 return ConversationHandler.END
     # currency=None means "settle all currencies"
@@ -139,8 +139,8 @@ async def settle_command(
             InlineKeyboardButton("No ✗", callback_data="settle_currency_no"),
         ]])
         await update.message.reply_text(
-            f'Did you mean *{suggested}*?',
-            parse_mode="Markdown",
+            f'Вы имели в виду <b>{suggested}</b>?',
+            parse_mode="HTML",
             reply_markup=keyboard,
         )
         return AWAIT_SETTLE_CURRENCY_CONFIRM
@@ -151,10 +151,10 @@ async def settle_command(
             db, chat_id, user.id, prefix="settle_recipient"
         )
         if not keyboard:
-            await update.message.reply_text("No other members found in this chat.")
+            await update.message.reply_text("Других участников пока не найдено.")
             return ConversationHandler.END
         await update.message.reply_text(
-            "Settle debt with whom?", reply_markup=keyboard
+            "С кем погасить долг?", reply_markup=keyboard
         )
         return AWAIT_SETTLE_RECIPIENT_SELECT
 
@@ -174,13 +174,13 @@ async def handle_settle_currency_confirm(
 
     if not state:
         await query.edit_message_text(
-            "This selection has expired. Please re-enter /settle."
+            "Время вышло. Введи /settle заново."
         )
         return ConversationHandler.END
 
     if query.data == "settle_currency_no":
         await query.edit_message_text(
-            "Cancelled. Please re-enter /settle with the correct currency code."
+            "Отменено. Введи /settle с правильным кодом валюты."
         )
         context.user_data.pop("pending_settle", None)
         return ConversationHandler.END
@@ -193,11 +193,11 @@ async def handle_settle_currency_confirm(
             db, state.chat_id, query.from_user.id, prefix="settle_recipient"
         )
         if not keyboard:
-            await query.edit_message_text("No other members found in this chat.")
+            await query.edit_message_text("Других участников пока не найдено.")
             context.user_data.pop("pending_settle", None)
             return ConversationHandler.END
         await query.edit_message_text(
-            "Settle debt with whom?", reply_markup=keyboard
+            "С кем погасить долг?", reply_markup=keyboard
         )
         return AWAIT_SETTLE_RECIPIENT_SELECT
 
@@ -218,7 +218,7 @@ async def handle_settle_recipient_select(
 
     if not state:
         await query.edit_message_text(
-            "This selection has expired. Please re-enter /settle."
+            "Время вышло. Введи /settle заново."
         )
         return ConversationHandler.END
 
