@@ -10,7 +10,7 @@ from telegram.ext import (
 
 from bot.currency import is_valid_currency, normalize_currency, suggest_currency
 from bot.database import Database
-from bot.formatting import display_name, format_debt_summary
+from bot.formatting import format_debt_summary
 from bot.handlers.common import build_member_keyboard, parse_amount_currency_username
 from bot.models import DebtRecord, PendingDebtState
 
@@ -109,23 +109,13 @@ async def _save_and_reply(
     members = await db.get_chat_members(state.chat_id)
     user_lookup = {m["user_id"]: m for m in members}
 
-    debtor = user_lookup.get(from_user_id, {"user_id": from_user_id, "full_name": str(from_user_id)})
-    creditor = user_lookup.get(state.creditor_id, {"user_id": state.creditor_id, "full_name": str(state.creditor_id)})
     abs_amount = abs(state.amount)
 
-    if state.amount < 0:
-        action = (
-            f"➖ {display_name(debtor)} заплатил {display_name(creditor)}: "
-            f"<b>{abs_amount:g} {state.currency}</b>"
-        )
-    else:
-        action = (
-            f"➕ {display_name(debtor)} → {display_name(creditor)}: "
-            f"<b>+{abs_amount:g} {state.currency}</b>"
-        )
+    sign = "➖" if state.amount < 0 else "➕"
+    action = f"{sign} {abs_amount:g} {state.currency}"
 
     summary = format_debt_summary(active_debts, user_lookup)
-    text = f"{action}\n\n<b>Итого:</b>\n{summary}"
+    text = f"{action}\n\n{summary}"
 
     if edit:
         await reply_target.edit_message_text(text, parse_mode="HTML")
