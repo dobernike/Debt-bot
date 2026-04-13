@@ -36,6 +36,11 @@ async def track_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await db.upsert_chat_member(chat.id, user.id)
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log all unhandled exceptions so they appear in Railway logs."""
+    logger.error("Unhandled exception", exc_info=context.error)
+
+
 async def expired_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -80,6 +85,8 @@ def main() -> None:
 
     # Catch expired inline button presses (runs after ConversationHandlers)
     app.add_handler(CallbackQueryHandler(expired_callback))
+
+    app.add_error_handler(error_handler)
 
     # Track every user who sends a message (handler group 1 always fires)
     app.add_handler(MessageHandler(filters.ALL, track_user), group=1)
