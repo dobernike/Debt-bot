@@ -17,6 +17,7 @@ from bot.models import DebtRecord, PendingDebtState
 # ConversationHandler states
 AWAIT_CURRENCY_CONFIRM = 0
 AWAIT_RECIPIENT_SELECT = 1
+AWAIT_CHAT_SELECT = 2
 
 
 async def _apply_debt_with_netting(
@@ -176,6 +177,7 @@ async def debt_command(
     db: Database = context.bot_data["db"]
     user = update.effective_user
     chat_id = update.effective_chat.id
+    is_private = update.effective_chat.type == "private"
 
     # --- Parse arguments ---
     try:
@@ -200,12 +202,25 @@ async def debt_command(
         await update.message.reply_text("Сумма не может быть равна нулю.")
         return ConversationHandler.END
 
+    if is_private and not usernames:
+        await update.message.reply_text(
+            "В личке укажи получателя через @username, например:\n"
+            "  /debt -10 USD @alice"
+        )
+        return ConversationHandler.END
+
+    if is_private and len(usernames) > 1:
+        await update.message.reply_text(
+            "Разделение долга между несколькими пользователями работает только в групповых чатах."
+        )
+        return ConversationHandler.END
+
     # --- Resolve currency ---
     currency: str | None = None
     suggested: str | None = None
 
     if not currency_str:
-        if update.effective_chat.type == "private":
+        if is_private:
             currency = await db.get_user_default_currency(user.id)
         else:
             currency = await db.get_chat_default_currency(chat_id)
@@ -220,7 +235,7 @@ async def debt_command(
             )
             return ConversationHandler.END
 
-    # --- Multi-creditor split ---
+    # --- Multi-creditor split (group only) ---
     if len(usernames) > 1:
         creditor_ids: list[int] = []
         for uname in usernames:
@@ -265,8 +280,53 @@ async def debt_command(
     # --- Single creditor ---
     username = usernames[0] if usernames else None
     creditor_id: int | None = None
+    target_chat_id: int = chat_id  # group: current chat; private: resolved below
 
-    if username:
+    if is_private:
+        # Look up user globally; determine chat from common memberships
+        member = await db.get_user_by_username_global(username)
+        if not member:
+            await update.message.reply_text(
+                f"Бот не знает пользователя @{username}. "
+                "Он должен написать любое сообщение в группе где есть бот."
+            )
+            return ConversationHandler.END
+        creditor_id = member["user_id"]
+        if creditor_id == user.id:
+            await update.message.reply_text("Нельзя быть должным самому себе.")
+            return ConversationHandler.END
+
+        common = await db.get_common_chats(user.id, creditor_id)
+        if not common:
+            await update.message.reply_text(
+                f"У тебя с @{username} нет общих групп с ботом."
+            )
+            return ConversationHandler.END
+        if len(common) == 1:
+            target_chat_id = int(common[0]["chat_id"])
+        else:
+            state = PendingDebtState(
+                amount=amount,
+                raw_currency=currency_str or "USD",
+                currency=currency,
+                suggested_currency=suggested,
+                creditor_id=creditor_id,
+                chat_id=0,  # will be set after chat selection
+            )
+            context.user_data["pending_debt"] = state
+            buttons = [
+                [InlineKeyboardButton(
+                    c.get("chat_title") or f"Чат {c['chat_id']}",
+                    callback_data=f"debt_chat:{c['chat_id']}",
+                )]
+                for c in common
+            ]
+            await update.message.reply_text(
+                f"В каком чате записать долг с @{username}?",
+                reply_markup=InlineKeyboardMarkup(buttons),
+            )
+            return AWAIT_CHAT_SELECT
+    elif username:
         member = await db.get_user_by_username(username, chat_id)
         if not member:
             await update.message.reply_text(
@@ -290,6 +350,8 @@ async def debt_command(
                 "Они должны написать хотя бы одно сообщение."
             )
             return ConversationHandler.END
+
+    chat_id = target_chat_id
 
     state = PendingDebtState(
         amount=amount,
@@ -403,6 +465,39 @@ async def handle_recipient_select(
     return ConversationHandler.END
 
 
+async def handle_chat_select(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    db: Database = context.bot_data["db"]
+    state: PendingDebtState | None = context.user_data.get("pending_debt")
+
+    if not state:
+        await query.edit_message_text(
+            "Время вышло. Введи /debt заново."
+        )
+        return ConversationHandler.END
+
+    state.chat_id = int(query.data.split(":", 1)[1])
+
+    if state.currency is None:
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Yes ✓", callback_data=f"currency_yes:{state.suggested_currency}"),
+            InlineKeyboardButton("No ✗", callback_data="currency_no"),
+        ]])
+        await query.edit_message_text(
+            f'Вы имели в виду <b>{state.suggested_currency}</b>?',
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+        return AWAIT_CURRENCY_CONFIRM
+
+    await _save_and_reply(db, state, query.from_user.id, context, query, edit=True)
+    return ConversationHandler.END
+
+
 def build_debt_conversation() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler("debt", debt_command)],
@@ -417,6 +512,12 @@ def build_debt_conversation() -> ConversationHandler:
                 CallbackQueryHandler(
                     handle_recipient_select,
                     pattern=r"^recipient:\d+$",
+                )
+            ],
+            AWAIT_CHAT_SELECT: [
+                CallbackQueryHandler(
+                    handle_chat_select,
+                    pattern=r"^debt_chat:-?\d+$",
                 )
             ],
         },

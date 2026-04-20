@@ -298,6 +298,33 @@ class Database:
             )
             return dict(row) if row else None
 
+    async def get_user_by_username_global(self, username: str) -> dict | None:
+        """Find user by @username across all users the bot has seen."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT user_id, username, full_name
+                FROM users
+                WHERE LOWER(username) = LOWER($1)
+                """,
+                username.lstrip("@"),
+            )
+            return dict(row) if row else None
+
+    async def get_common_chats(self, user_a_id: int, user_b_id: int) -> list[dict]:
+        """Return group chats where both users are members."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT c.chat_id, c.chat_title, c.default_currency
+                FROM chats c
+                JOIN chat_members cm1 ON c.chat_id = cm1.chat_id AND cm1.user_id = $1
+                JOIN chat_members cm2 ON c.chat_id = cm2.chat_id AND cm2.user_id = $2
+                """,
+                user_a_id, user_b_id,
+            )
+            return [dict(r) for r in rows]
+
     async def settle_debt(
         self,
         chat_id: int,
