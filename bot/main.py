@@ -34,7 +34,11 @@ async def track_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     db: Database = context.bot_data["db"]
     await db.upsert_user(user.id, user.username, user.full_name)
-    await db.upsert_chat(chat.id, getattr(chat, "title", None) or chat.full_name)
+    if chat.type == "private":
+        title = "🤖 Личная запись"
+    else:
+        title = chat.title or chat.full_name
+    await db.upsert_chat(chat.id, title)
     await db.upsert_chat_member(chat.id, user.id)
 
 

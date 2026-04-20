@@ -297,35 +297,34 @@ async def debt_command(
             return ConversationHandler.END
 
         common = await db.get_common_chats(user.id, creditor_id)
-        if not common:
-            await update.message.reply_text(
-                f"У тебя с @{username} нет общих групп с ботом."
-            )
-            return ConversationHandler.END
-        if len(common) == 1:
-            target_chat_id = int(common[0]["chat_id"])
-        else:
-            state = PendingDebtState(
-                amount=amount,
-                raw_currency=currency_str or "USD",
-                currency=currency,
-                suggested_currency=suggested,
-                creditor_id=creditor_id,
-                chat_id=0,  # will be set after chat selection
-            )
-            context.user_data["pending_debt"] = state
-            buttons = [
-                [InlineKeyboardButton(
-                    c.get("chat_title") or f"Чат {c['chat_id']}",
-                    callback_data=f"debt_chat:{c['chat_id']}",
-                )]
-                for c in common
-            ]
-            await update.message.reply_text(
-                f"В каком чате записать долг с @{username}?",
-                reply_markup=InlineKeyboardMarkup(buttons),
-            )
-            return AWAIT_CHAT_SELECT
+
+        state = PendingDebtState(
+            amount=amount,
+            raw_currency=currency_str or "USD",
+            currency=currency,
+            suggested_currency=suggested,
+            creditor_id=creditor_id,
+            chat_id=0,  # will be set after chat selection
+        )
+        context.user_data["pending_debt"] = state
+
+        buttons = [
+            [InlineKeyboardButton(
+                c.get("chat_title") or f"Чат {c['chat_id']}",
+                callback_data=f"debt_chat:{c['chat_id']}",
+            )]
+            for c in common
+        ]
+        buttons.append([InlineKeyboardButton(
+            "🤖 Личная запись (только ты)",
+            callback_data=f"debt_chat:{user.id}",
+        )])
+
+        await update.message.reply_text(
+            f"Куда записать долг с @{username}?",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+        return AWAIT_CHAT_SELECT
     elif username:
         member = await db.get_user_by_username(username, chat_id)
         if not member:
@@ -481,6 +480,11 @@ async def handle_chat_select(
         return ConversationHandler.END
 
     state.chat_id = int(query.data.split(":", 1)[1])
+
+    # "Personal" record: user's own private chat with the bot.
+    # Ensure creditor is a chat_member so summaries/history resolve their name.
+    if state.chat_id == query.from_user.id:
+        await db.upsert_chat_member(state.chat_id, state.creditor_id)
 
     if state.currency is None:
         keyboard = InlineKeyboardMarkup([[
