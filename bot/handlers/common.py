@@ -62,17 +62,17 @@ async def build_member_keyboard(
 
 def parse_amount_currency_username(
     args: list[str],
-) -> tuple[float | None, str | None, str | None]:
+) -> tuple[float | None, str | None, list[str]]:
     """
-    Loosely parse a list of tokens into (amount, currency_str, username).
+    Loosely parse a list of tokens into (amount, currency_str, usernames).
     Tokens can be in any order: amount is the first float found,
-    username is any token starting with '@', currency is anything else.
-    Returns None for each field if not found.
+    usernames are all tokens starting with '@', currency is anything else.
+    Returns None for amount/currency if not found, empty list for usernames.
     Raises ValueError if the first non-@ token cannot be parsed as float.
     """
     amount: float | None = None
     currency_str: str | None = None
-    username: str | None = None
+    usernames: list[str] = []
 
     # Merge bare sign tokens ("- 300" → "-300", "+ 300" → "+300")
     merged: list[str] = []
@@ -87,7 +87,7 @@ def parse_amount_currency_username(
 
     for token in merged:
         if token.startswith("@"):
-            username = token.lstrip("@")
+            usernames.append(token.lstrip("@"))
         else:
             value = _try_parse_number(token)
             if value is not None:
@@ -104,4 +104,4 @@ def parse_amount_currency_username(
                         "Первый аргумент должен быть числом, например /debt 150"
                     )
 
-    return amount, currency_str, username
+    return amount, currency_str, usernames

@@ -114,14 +114,58 @@ async def _save_and_reply(
     abs_amount = abs(state.amount)
 
     action = f"💸 {abs_amount:g} {state.currency}  {display_name(debtor)} → {display_name(creditor)}"
-
     summary = format_debt_summary(active_debts, user_lookup)
     text = f"{action}\n\n{summary}"
 
     if edit:
-        await reply_target.edit_message_text(text, parse_mode="HTML")
+        await reply_target.edit_message_text(text)
     else:
-        await reply_target.message.reply_text(text, parse_mode="HTML")
+        await reply_target.message.reply_text(text)
+
+    context.user_data.pop("pending_debt", None)
+
+
+async def _save_and_reply_multi(
+    db: Database,
+    state: PendingDebtState,
+    from_user_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    reply_target,
+    edit: bool = False,
+) -> None:
+    """Handle split debt across multiple creditors."""
+    n = len(state.creditor_ids)
+    per_amount = round(abs(state.amount) / n, 2)
+    signed = per_amount if state.amount > 0 else -per_amount
+
+    for creditor_id in state.creditor_ids:
+        await _apply_debt_with_netting(
+            db,
+            chat_id=state.chat_id,
+            debtor_id=from_user_id,
+            creditor_id=creditor_id,
+            amount=signed,
+            currency=state.currency,
+        )
+
+    active_debts = await db.get_active_debts(state.chat_id)
+    members = await db.get_chat_members(state.chat_id)
+    user_lookup = {m["user_id"]: m for m in members}
+    debtor = user_lookup.get(from_user_id, {"user_id": from_user_id, "full_name": str(from_user_id)})
+
+    header = f"💸 {abs(state.amount):g} {state.currency} ÷ {n} = {per_amount:g} {state.currency}"
+    lines = [header]
+    for creditor_id in state.creditor_ids:
+        creditor = user_lookup.get(creditor_id, {"user_id": creditor_id, "full_name": str(creditor_id)})
+        lines.append(f"  {display_name(debtor)} → {display_name(creditor)}")
+
+    summary = format_debt_summary(active_debts, user_lookup)
+    text = "\n".join(lines) + "\n\n" + summary
+
+    if edit:
+        await reply_target.edit_message_text(text)
+    else:
+        await reply_target.message.reply_text(text)
 
     context.user_data.pop("pending_debt", None)
 
@@ -135,7 +179,7 @@ async def debt_command(
 
     # --- Parse arguments ---
     try:
-        amount, currency_str, username = parse_amount_currency_username(
+        amount, currency_str, usernames = parse_amount_currency_username(
             context.args or []
         )
     except ValueError as exc:
@@ -144,11 +188,11 @@ async def debt_command(
 
     if amount is None:
         await update.message.reply_text(
-            "Использование: /debt <сумма> [валюта] [@username]\n"
+            "Использование: /debt <сумма> [валюта] [@username ...]\n"
             "Примеры:\n"
-            "  /debt 150       — ты должен 150 USD\n"
-            "  /debt -150      — ты отдал 150 USD (уменьшает долг)\n"
-            "  /debt 100 VND @alice"
+            "  /debt 150              — ты должен 150 USD\n"
+            "  /debt -150             — ты отдал 150 USD\n"
+            "  /debt 300 руб @a @b @c — поровну на троих"
         )
         return ConversationHandler.END
 
@@ -156,7 +200,67 @@ async def debt_command(
         await update.message.reply_text("Сумма не может быть равна нулю.")
         return ConversationHandler.END
 
-    # --- Resolve creditor ---
+    # --- Resolve currency ---
+    currency: str | None = None
+    suggested: str | None = None
+
+    if not currency_str:
+        currency = "USD"
+    elif is_valid_currency(currency_str):
+        currency = normalize_currency(currency_str)
+    else:
+        suggested = suggest_currency(currency_str)
+        if not suggested:
+            await update.message.reply_text(
+                f'Неизвестная валюта "{currency_str}". '
+                "Используй код ISO 4217 (например USD, EUR, VND, JPY)."
+            )
+            return ConversationHandler.END
+
+    # --- Multi-creditor split ---
+    if len(usernames) > 1:
+        creditor_ids: list[int] = []
+        for uname in usernames:
+            member = await db.get_user_by_username(uname, chat_id)
+            if not member:
+                await update.message.reply_text(
+                    f"Пользователь @{uname} пока не виден боту.\n\n"
+                    f"Попроси @{uname} написать любое сообщение в группе — "
+                    "после этого команда заработает."
+                )
+                return ConversationHandler.END
+            if member["user_id"] == user.id:
+                await update.message.reply_text("Нельзя быть должным самому себе.")
+                return ConversationHandler.END
+            creditor_ids.append(member["user_id"])
+
+        state = PendingDebtState(
+            amount=amount,
+            raw_currency=currency_str or "USD",
+            currency=currency,
+            suggested_currency=suggested,
+            creditor_ids=creditor_ids,
+            chat_id=chat_id,
+        )
+        context.user_data["pending_debt"] = state
+
+        if currency is None:
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("Yes ✓", callback_data=f"currency_yes:{suggested}"),
+                InlineKeyboardButton("No ✗", callback_data="currency_no"),
+            ]])
+            await update.message.reply_text(
+                f'Вы имели в виду <b>{suggested}</b>?',
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+            return AWAIT_CURRENCY_CONFIRM
+
+        await _save_and_reply_multi(db, state, user.id, context, update, edit=False)
+        return ConversationHandler.END
+
+    # --- Single creditor ---
+    username = usernames[0] if usernames else None
     creditor_id: int | None = None
 
     if username:
@@ -183,27 +287,7 @@ async def debt_command(
                 "Они должны написать хотя бы одно сообщение."
             )
             return ConversationHandler.END
-        # else creditor_id stays None → will show selection keyboard
 
-    # --- Resolve currency ---
-    currency: str | None = None
-    suggested: str | None = None
-
-    if not currency_str:
-        currency = "USD"
-    elif is_valid_currency(currency_str):
-        currency = normalize_currency(currency_str)
-    else:
-        suggested = suggest_currency(currency_str)
-        if not suggested:
-            await update.message.reply_text(
-                f'Неизвестная валюта "{currency_str}". '
-                "Используй код ISO 4217 (например USD, EUR, VND, JPY)."
-            )
-            return ConversationHandler.END
-        # Will ask for confirmation below
-
-    # --- Store pending state ---
     state = PendingDebtState(
         amount=amount,
         raw_currency=currency_str or "USD",
@@ -214,7 +298,6 @@ async def debt_command(
     )
     context.user_data["pending_debt"] = state
 
-    # --- Ask for currency confirmation first (if needed) ---
     if currency is None:
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("Yes ✓", callback_data=f"currency_yes:{suggested}"),
@@ -227,7 +310,6 @@ async def debt_command(
         )
         return AWAIT_CURRENCY_CONFIRM
 
-    # --- Ask for recipient if still unknown ---
     if creditor_id is None:
         keyboard = await build_member_keyboard(db, chat_id, user.id, prefix="recipient")
         if not keyboard:
@@ -239,7 +321,6 @@ async def debt_command(
         await update.message.reply_text("Кому ты должен?", reply_markup=keyboard)
         return AWAIT_RECIPIENT_SELECT
 
-    # --- All resolved: save immediately ---
     await _save_and_reply(db, state, user.id, context, update, edit=False)
     return ConversationHandler.END
 
@@ -269,6 +350,11 @@ async def handle_currency_confirm(
     # currency_yes:<CODE>
     code = query.data.split(":", 1)[1]
     state.currency = code
+
+    # Multi-creditor split — all recipients already known
+    if state.creditor_ids:
+        await _save_and_reply_multi(db, state, query.from_user.id, context, query, edit=True)
+        return ConversationHandler.END
 
     # If recipient is still unknown, ask now
     if state.creditor_id is None:
