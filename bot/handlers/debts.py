@@ -16,7 +16,7 @@ async def debts_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         user_ids = {int(d["debtor_id"]) for d in debts} | {int(d["creditor_id"]) for d in debts}
         users = await db.get_users_by_ids(list(user_ids))
         user_lookup = {u["user_id"]: u for u in users}
-        summary = format_global_debt_summary(debts, user_lookup)
+        summary = format_global_debt_summary(debts, user_lookup, viewer_id=user.id)
         await update.message.reply_text(summary, parse_mode="HTML")
     else:
         # Group chat: show only this group's debts

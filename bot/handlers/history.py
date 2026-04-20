@@ -15,7 +15,7 @@ async def history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         user_ids = {int(r["debtor_id"]) for r in rows} | {int(r["creditor_id"]) for r in rows}
         users = await db.get_users_by_ids(list(user_ids))
         user_lookup = {u["user_id"]: u for u in users}
-        text = "📋 История (последние 10)\n\n" + format_global_history(rows, user_lookup)
+        text = "📋 История (последние 10)\n\n" + format_global_history(rows, user_lookup, viewer_id=user.id)
         await update.message.reply_text(text, parse_mode="HTML")
     else:
         rows = await db.get_transaction_history(chat.id, limit=10)

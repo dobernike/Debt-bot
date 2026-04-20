@@ -40,28 +40,33 @@ def format_debt_summary(
     return "\n".join(lines)
 
 
+def _chat_label(row: dict, viewer_id: int | None, user_lookup: dict[int, dict]) -> str:
+    """Return a human-friendly section title for a chat row in a global view."""
+    chat_id = int(row["chat_id"])
+    # Private chat detection: chat_id equals one of the parties
+    debtor_id = int(row["debtor_id"])
+    creditor_id = int(row["creditor_id"])
+    if chat_id == debtor_id or chat_id == creditor_id:
+        if chat_id == viewer_id:
+            return "🤖 Личная запись"
+        owner = user_lookup.get(chat_id, {"user_id": chat_id, "full_name": str(chat_id)})
+        return f"🤖 Личная запись ({display_name(owner)})"
+    return row.get("chat_title") or f"Чат {chat_id}"
+
+
 def format_global_debt_summary(
     debts: list[dict],
     user_lookup: dict[int, dict],
+    viewer_id: int | None = None,
 ) -> str:
-    """
-    For private chat: show all user's debts grouped by chat.
-
-    Output example:
-        📍 Путешествие в Азию
-        @you → @alice: 150 USD
-
-        📍 Общие расходы
-        @bob → @you: 50 EUR
-    """
+    """For private chat: show all user's debts grouped by chat."""
     if not debts:
         return "Долгов нет."
 
-    # Group rows by (chat_id, chat_title)
     by_chat: dict[tuple, list] = defaultdict(list)
     for row in debts:
-        key = (row["chat_id"], row.get("chat_title") or f"Чат {row['chat_id']}")
-        by_chat[key].append(row)
+        label = _chat_label(row, viewer_id, user_lookup)
+        by_chat[(row["chat_id"], label)].append(row)
 
     sections: list[str] = []
     for (_, chat_title), chat_debts in by_chat.items():
@@ -107,15 +112,19 @@ def format_history(rows: list[dict], user_lookup: dict[int, dict]) -> str:
     return _format_history_rows(rows, user_lookup)
 
 
-def format_global_history(rows: list[dict], user_lookup: dict[int, dict]) -> str:
+def format_global_history(
+    rows: list[dict],
+    user_lookup: dict[int, dict],
+    viewer_id: int | None = None,
+) -> str:
     """For private chat: transactions grouped by chat, then by pair."""
     if not rows:
         return "История пуста."
 
     by_chat: dict[tuple, list] = defaultdict(list)
     for row in rows:
-        key = (row["chat_id"], row.get("chat_title") or f"Чат {row['chat_id']}")
-        by_chat[key].append(row)
+        label = _chat_label(row, viewer_id, user_lookup)
+        by_chat[(row["chat_id"], label)].append(row)
 
     sections: list[str] = []
     for (_, chat_title), chat_rows in by_chat.items():
