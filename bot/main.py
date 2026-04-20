@@ -13,6 +13,7 @@ from telegram.ext import (
 
 from bot.config import BOT_TOKEN, DATABASE_URL
 from bot.database import Database
+from bot.handlers.currency_cmd import currency_handler
 from bot.handlers.debt import build_debt_conversation
 from bot.handlers.debts import debts_handler
 from bot.handlers.help import help_handler
@@ -81,10 +82,11 @@ async def post_init(application: Application) -> None:
     logger.info("Database initialised.")
 
     commands = [
-        BotCommand("debt",    "Записать долг или платёж: /debt 150 [валюта] [@user]"),
-        BotCommand("debts",   "Показать текущие долги"),
-        BotCommand("history", "История последних 10 транзакций"),
-        BotCommand("help",    "Справка по командам"),
+        BotCommand("debt",     "Записать долг или платёж: /debt 150 [валюта] [@user]"),
+        BotCommand("debts",    "Показать текущие долги"),
+        BotCommand("history",  "История последних 10 транзакций"),
+        BotCommand("currency", "Дефолтная валюта: /currency [код]"),
+        BotCommand("help",     "Справка по командам"),
     ]
     try:
         await application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
@@ -116,6 +118,7 @@ def main() -> None:
     # Simple one-shot commands
     app.add_handler(CommandHandler("debts", debts_handler))
     app.add_handler(CommandHandler("history", history_handler))
+    app.add_handler(CommandHandler("currency", currency_handler))
     app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("start", help_handler))
 

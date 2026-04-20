@@ -61,6 +61,41 @@ class Database:
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_debts_parties ON debts(debtor_id, creditor_id)"
             )
+            # Add default_currency columns if they don't exist yet (safe migration)
+            await conn.execute(
+                "ALTER TABLE chats ADD COLUMN IF NOT EXISTS default_currency TEXT NOT NULL DEFAULT 'USD'"
+            )
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS default_currency TEXT NOT NULL DEFAULT 'USD'"
+            )
+
+    async def get_chat_default_currency(self, chat_id: int) -> str:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT default_currency FROM chats WHERE chat_id = $1", chat_id
+            )
+            return row["default_currency"] if row else "USD"
+
+    async def set_chat_default_currency(self, chat_id: int, currency: str) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE chats SET default_currency = $1 WHERE chat_id = $2",
+                currency, chat_id,
+            )
+
+    async def get_user_default_currency(self, user_id: int) -> str:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT default_currency FROM users WHERE user_id = $1", user_id
+            )
+            return row["default_currency"] if row else "USD"
+
+    async def set_user_default_currency(self, user_id: int, currency: str) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET default_currency = $1 WHERE user_id = $2",
+                currency, user_id,
+            )
 
     async def upsert_user(
         self, user_id: int, username: str | None, full_name: str

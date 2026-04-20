@@ -205,7 +205,10 @@ async def debt_command(
     suggested: str | None = None
 
     if not currency_str:
-        currency = "USD"
+        if update.effective_chat.type == "private":
+            currency = await db.get_user_default_currency(user.id)
+        else:
+            currency = await db.get_chat_default_currency(chat_id)
     elif is_valid_currency(currency_str):
         currency = normalize_currency(currency_str)
     else:
